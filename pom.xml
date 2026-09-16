@@ -21,13 +21,16 @@
   <developers>
     <developer>
       <name>AI SENSE AS</name>
-      <url>https://aisense.no/</url>
+      <email>abuse@aisense.no</email>
+      <organization>AI SENSE AS</organization>
+      <organizationUrl>https://aisense.no/</organizationUrl>
     </developer>
   </developers>
 
   <scm>
     <url>https://github.com/aisenseapi/aamio-java</url>
     <connection>scm:git:https://github.com/aisenseapi/aamio-java.git</connection>
+    <developerConnection>scm:git:https://github.com/aisenseapi/aamio-java.git</developerConnection>
   </scm>
 
   <properties>
