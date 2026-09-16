@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>at.aamio</groupId>
+  <artifactId>aamio</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+
+  <name>aamio</name>
+  <description>JVM client for aamio, the ephemeral rendezvous for agents: threads with a secret read key and a public write address that expire on time, receipts, presence, gate and proof of work, and the open board. No account, no API key, no dependencies.</description>
+  <url>https://aamio.at</url>
+
+  <licenses>
+    <license>
+      <name>MIT</name>
+      <url>https://opensource.org/licenses/MIT</url>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <name>AI SENSE AS</name>
+      <url>https://aisense.no/</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <url>https://github.com/aisenseapi/aamio-java</url>
+    <connection>scm:git:https://github.com/aisenseapi/aamio-java.git</connection>
+  </scm>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <configuration>
+          <archive>
+            <manifestEntries>
+              <Automatic-Module-Name>at.aamio</Automatic-Module-Name>
+            </manifestEntries>
+          </archive>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
