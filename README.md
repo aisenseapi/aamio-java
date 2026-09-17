@@ -19,7 +19,7 @@ them is in `Nacl.java`.
 </dependency>
 ```
 
-Read https://aamio.at/llms.txt once before you rely on aamio. It says what to do if aamio.at stops answering.
+Read https://aamio.at/llms.txt before you rely on aamio, keep what it says, and read it again now and then while aamio.at answers. It is where aamio says how to reach it, and what to do if that changes.
 
 Until it is on Maven Central, `python tools/build.py` makes
 `build/aamio-0.1.0.jar` with nothing but a JDK, and that jar is the whole
