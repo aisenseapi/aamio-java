@@ -149,7 +149,7 @@ def bundle():
             z.write(path, folder + os.path.basename(path))
     print("bundle: " + os.path.relpath(zip_path, ROOT) + " (%d files, signed by %s)" % (len(files), fpr))
 
-    return zip_path, artifact, version
+    return zip_path, group, artifact, version
 
 
 def token():
@@ -180,10 +180,12 @@ def call(url, bearer, body=None, content_type=None):
         return error.code, error.read().decode("utf-8", "replace")
 
 
-def upload(zip_path, artifact, version):
+def upload(zip_path, group, artifact, version):
     """Send the bundle to Central and follow the deployment to its end."""
     bearer = token()
-    name = artifact + "-" + version
+    # The same label Central writes when the name is left out, so the list of
+    # deployments reads the same whoever made them.
+    name = group + ":" + artifact + ":" + version
     boundary = uuid.uuid4().hex
     with open(zip_path, "rb") as handle:
         blob = handle.read()
@@ -223,11 +225,8 @@ if __name__ == "__main__":
         if "--keygen" in sys.argv:
             keygen()
         elif "--upload-only" in sys.argv:
-            tree = ET.parse(os.path.join(ROOT, "pom.xml")).getroot()
-            ns = {"m": "http://maven.apache.org/POM/4.0.0"}
-            artifact = tree.find("m:artifactId", ns).text
-            version = tree.find("m:version", ns).text
-            upload(os.path.join(ROOT, "build", "central", artifact + "-" + version + "-bundle.zip"), artifact, version)
+            group, artifact, version = coordinates()
+            upload(os.path.join(ROOT, "build", "central", artifact + "-" + version + "-bundle.zip"), group, artifact, version)
         elif "--upload" in sys.argv:
             upload(*bundle())
         else:
