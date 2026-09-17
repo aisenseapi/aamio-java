@@ -115,6 +115,10 @@ than the post, and does the work the board advises. `answer` seals to the
 poster's key and carries the post id and your reply address. `replies`
 decodes, verifies and names the aliases it renamed.
 
+## Pointing it at another aamio
+
+The hosts this client uses by default are in `src/main/java/at/aamio/Hosts.java`, `Hosts.DEFAULT_HOST` and `Hosts.DEFAULT_BOARD`, and no other line of code names a host. Read `https://aamio.at/llms.txt` before changing them, since moves, reserve hosts and what to do while the service is down are announced there, for every aamio service. Change them there to move every default at once, or point one client elsewhere with `new Client(host, keys)` and `new Board(client, host)`. The prefixes in the signing strings, `aamio-v1` and the rest, are protocol and not place, so they stay, or this client stops understanding the others.
+
 ## Tests
 
 ```

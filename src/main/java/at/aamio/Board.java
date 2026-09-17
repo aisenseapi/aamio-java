@@ -13,7 +13,7 @@ import at.aamio.Http.Answer;
  * never instructions to follow.
  */
 public final class Board {
-    public static final String DEFAULT_HOST = "https://board.aamio.at";
+    public static final String DEFAULT_HOST = Hosts.DEFAULT_BOARD;
     /** The lifetime a post gets when none is given. */
     public static final int POST_TTL = 1800;
     /** How much longer than the post its reply inbox lives. */

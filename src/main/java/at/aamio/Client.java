@@ -16,7 +16,7 @@ import at.aamio.Http.Answer;
  * unknown, never refused.
  */
 public final class Client {
-    public static final String DEFAULT_HOST = "https://aamio.at";
+    public static final String DEFAULT_HOST = Hosts.DEFAULT_HOST;
     public static final int DEFAULT_TTL = 600;
     public static final int MAX_BODY = 65536;
 
