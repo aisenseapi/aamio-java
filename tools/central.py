@@ -2,23 +2,39 @@
 
     python tools/central.py --keygen    # once: a release signing key in AAMIO_GPG_HOME, its public half sent to keyserver.ubuntu.com
     python tools/central.py             # build/central/aamio-<version>-bundle.zip: pom, jar, sources, javadoc, md5, sha1 and asc for each
+    python tools/central.py --upload    # build it, then send it to Central and wait for the verdict
 
 The bundle is what "Publish Component" at https://central.sonatype.com takes,
 and what its publisher API takes. The version is read from pom.xml.
 
+--upload does the API route, so a release needs no browser. It reads the
+Central user token from AAMIO_CENTRAL_TOKEN_FILE, or from secrets/central.token
+beside this repository, as one line of "username:password" exactly as
+the portal prints the pair under Account, Generate User Token. The token is
+never printed. Upload is POST /api/v1/publisher/upload with the zip as the
+multipart field "bundle", and the deployment is then polled with POST
+/api/v1/publisher/status until it is published or fails. --upload-only skips
+the build and sends the bundle that is already there.
+
 Environment: AAMIO_JDK or JAVA_HOME for javac, javadoc and jar; AAMIO_GPG_HOME
 for the GnuPG home that holds the release key, kept outside the repository;
-GPG for the gpg binary, when it is not on PATH (Git for Windows has one).
+GPG for the gpg binary, when it is not on PATH (Git for Windows has one);
+AAMIO_CENTRAL_TOKEN_FILE for the token file, when it is somewhere else.
 """
 
+import base64
 import glob
 import hashlib
+import json
 import os
 import shutil
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -27,6 +43,8 @@ JDK = os.environ.get("AAMIO_JDK") or os.environ.get("JAVA_HOME")
 GPG_HOME = os.environ.get("AAMIO_GPG_HOME")
 GPG = os.environ.get("GPG") or shutil.which("gpg") or r"C:\Program Files\Git\usr\bin\gpg.exe"
 KEYSERVER = "https://keyserver.ubuntu.com"
+CENTRAL = "https://central.sonatype.com/api/v1/publisher"
+TOKEN_FILE = os.environ.get("AAMIO_CENTRAL_TOKEN_FILE") or os.path.join(os.path.dirname(ROOT), "secrets", "central.token")
 
 
 def tool(name):
@@ -131,11 +149,87 @@ def bundle():
             z.write(path, folder + os.path.basename(path))
     print("bundle: " + os.path.relpath(zip_path, ROOT) + " (%d files, signed by %s)" % (len(files), fpr))
 
+    return zip_path, artifact, version
+
+
+def token():
+    """The Central user token as the API wants it, read from a file and never printed."""
+    if not os.path.isfile(TOKEN_FILE):
+        sys.exit(
+            "no Central token at " + TOKEN_FILE + ". Make one at https://central.sonatype.com under "
+            "Account, Generate User Token, and save the pair as one line of username:password. "
+            "Point AAMIO_CENTRAL_TOKEN_FILE somewhere else if you keep it elsewhere."
+        )
+    with open(TOKEN_FILE, encoding="utf-8") as handle:
+        pair = handle.read().strip()
+    if pair.count(":") != 1 or not all(part.strip() for part in pair.split(":")):
+        sys.exit(TOKEN_FILE + " should hold one line of username:password from the portal, and nothing else")
+
+    return base64.b64encode(pair.encode("utf-8")).decode("ascii")
+
+
+def call(url, bearer, body=None, content_type=None):
+    request = urllib.request.Request(url, data=body, method="POST")
+    request.add_header("Authorization", "Bearer " + bearer)
+    if content_type:
+        request.add_header("Content-Type", content_type)
+    try:
+        with urllib.request.urlopen(request, timeout=600) as answer:
+            return answer.status, answer.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as error:
+        return error.code, error.read().decode("utf-8", "replace")
+
+
+def upload(zip_path, artifact, version):
+    """Send the bundle to Central and follow the deployment to its end."""
+    bearer = token()
+    name = artifact + "-" + version
+    boundary = uuid.uuid4().hex
+    with open(zip_path, "rb") as handle:
+        blob = handle.read()
+    body = b"".join([
+        ("--" + boundary + "\r\n").encode(),
+        ('Content-Disposition: form-data; name="bundle"; filename="' + os.path.basename(zip_path) + '"\r\n').encode(),
+        b"Content-Type: application/octet-stream\r\n\r\n",
+        blob,
+        ("\r\n--" + boundary + "--\r\n").encode(),
+    ])
+    query = urllib.parse.urlencode({"name": name, "publishingType": "AUTOMATIC"})
+    status, answer = call(CENTRAL + "/upload?" + query, bearer, body, "multipart/form-data; boundary=" + boundary)
+    if status not in (200, 201):
+        sys.exit("upload refused: %s %s" % (status, answer[:400]))
+    deployment = answer.strip().strip('"')
+    print("uploaded " + name + " as deployment " + deployment)
+
+    # PENDING and VALIDATING are on the way. PUBLISHING means Central took it
+    # and the artifacts appear in the central repository within the hour.
+    for _ in range(60):
+        status, answer = call(CENTRAL + "/status?" + urllib.parse.urlencode({"id": deployment}), bearer)
+        if status != 200:
+            sys.exit("status refused: %s %s" % (status, answer[:400]))
+        state = json.loads(answer).get("deploymentState", "UNKNOWN")
+        print("  " + state)
+        if state in ("PUBLISHING", "PUBLISHED"):
+            print("done: " + name + " is " + state.lower() + " on Central")
+            return
+        if state == "FAILED":
+            sys.exit("Central refused the deployment: " + answer[:800])
+        time.sleep(10)
+    sys.exit("still not published after ten minutes. The deployment is " + deployment + " at https://central.sonatype.com/publishing/deployments")
+
 
 if __name__ == "__main__":
     try:
         if "--keygen" in sys.argv:
             keygen()
+        elif "--upload-only" in sys.argv:
+            tree = ET.parse(os.path.join(ROOT, "pom.xml")).getroot()
+            ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+            artifact = tree.find("m:artifactId", ns).text
+            version = tree.find("m:version", ns).text
+            upload(os.path.join(ROOT, "build", "central", artifact + "-" + version + "-bundle.zip"), artifact, version)
+        elif "--upload" in sys.argv:
+            upload(*bundle())
         else:
             bundle()
     except subprocess.CalledProcessError as error:
