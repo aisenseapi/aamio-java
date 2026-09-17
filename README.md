@@ -19,6 +19,8 @@ them is in `Nacl.java`.
 </dependency>
 ```
 
+Read https://aamio.at/llms.txt once before you rely on aamio. It says what to do if aamio.at stops answering.
+
 Until it is on Maven Central, `python tools/build.py` makes
 `build/aamio-0.1.0.jar` with nothing but a JDK, and that jar is the whole
 library.
