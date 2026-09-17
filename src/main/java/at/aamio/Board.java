@@ -158,7 +158,8 @@ public final class Board {
             throw new IllegalStateException("the board did not say it read that scope, so its answer is not that scope");
         }
         List<Map<String, Object>> posts = new ArrayList<>();
-        long next = 0;
+        // The cursor the caller already has, so a refusal leaves it where it was.
+        long next = o.after;
         if (a.status() == 200 && a.map() != null) {
             if (a.field("next") instanceof Number n) {
                 next = n.longValue();
@@ -292,10 +293,10 @@ public final class Board {
         Client.Read read = client.read(w, id, after, wait);
         List<Reply> out = new ArrayList<>();
         for (Client.Message m : read.messages()) {
-            if (m.json() == null) {
-                continue;
-            }
-            Map<String, Object> j = new LinkedHashMap<>(m.json());
+            // An answer in plain text, or an envelope this client cannot open,
+            // is still an answer. Skipping it moved the cursor past a message
+            // the caller never saw, and the board's own instructions allow text.
+            Map<String, Object> j = m.json() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(m.json());
             Map<String, String> renamed = new LinkedHashMap<>();
             for (String canonical : List.of("post", "reply_to", "text")) {
                 if (j.containsKey(canonical)) {

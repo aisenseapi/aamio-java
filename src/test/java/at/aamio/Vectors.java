@@ -240,8 +240,12 @@ public final class Vectors {
         Client.Message m = new Client(null, kb).decode(raw);
         Check.ok(m.format().equals("sealed") && m.json() != null && "ARC-4471".equals(m.json().get("tender")) && ka.publicKey().equals(m.from()), "the recipient decodes it: format sealed, JSON parsed");
         Client.Message notMine = new Client(null, Keys.generate()).decode(raw);
-        Check.ok(notMine.format().equals("unreadable") && notMine.error().contains("sealed to"), "somebody else finds it unreadable, and learns whom it was sealed to");
-        Check.ok(new Client(null, null).decode(raw).format().equals("sealed-to-someone-else"), "a client without keys leaves it sealed");
+        Check.ok(notMine.format().equals("sealed-to-someone-else") && notMine.error().contains("sealed to") && notMine.json() == null, "somebody else is told it is sealed to someone else, learns whom, and gets no payload");
+        // A client with no keys cannot tell whom an envelope is for. It used to
+        // say "sealed to someone else" all the same, with no error beside the
+        // claim, and envelopes sealed to the reader were dropped on that word.
+        Client.Message unchecked = new Client(null, null).decode(raw);
+        Check.ok(unchecked.format().equals("sealed-unchecked") && unchecked.json() == null, "a client without keys says it has not checked, rather than claiming it is someone else's");
         Http.override = null;
 
         Check.section("scopes");

@@ -222,6 +222,19 @@ public final class Keys {
     }
 
     /** Whether a body claims to be a sealed envelope. */
+    /**
+     * The recipient an envelope names, the first 8 hex of sha256 over their
+     * public key, or null when the body does not say. It answers the question
+     * a reader would otherwise guess at: is this sealed to me.
+     */
+    public static String envelopeTo(String body) {
+        Map<String, Object> envelope = Json.object(body);
+        if (envelope == null || !"nacl.box.v1".equals(envelope.get("e2ee"))) {
+            return null;
+        }
+        return envelope.get("to") instanceof String to && !to.isEmpty() ? to : null;
+    }
+
     public static boolean isEnvelope(String body) {
         Map<String, Object> e = Json.object(body);
         return e != null && ENVELOPE.equals(e.get("e2ee")) && nonEmpty(e.get("nonce")) && nonEmpty(e.get("ct"));

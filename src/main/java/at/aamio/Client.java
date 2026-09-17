@@ -225,7 +225,10 @@ public final class Client {
         }
         Answer a = Http.call("GET", host + path, null, Map.of("X-Read", id), timeout + 25);
         List<Message> messages = new ArrayList<>();
-        long next = 0;
+        // The cursor the caller already has, so a refusal or a dead connection
+        // leaves it where it was. Zero sent the documented loop back to the
+        // first message and delivered the whole thread a second time.
+        long next = after;
         if (a.status() == 200 && a.map() != null) {
             if (a.field("next") instanceof Number n) {
                 next = n.longValue();
@@ -254,8 +257,18 @@ public final class Client {
         String error = null;
         String text = body;
         if (sealed) {
-            format = "sealed-to-someone-else";
-            if (keys != null && from != null && !from.isEmpty()) {
+            // The envelope names who it is sealed to, so read that rather than
+            // guess. This said "sealed to someone else" whenever the client had
+            // no keys or the message carried no sender, with no error beside
+            // the claim, and envelopes sealed to the reader were dropped on it.
+            String to = Keys.envelopeTo(body);
+            String mine = keys != null ? keys.hashPrefix() : null;
+            if (to != null && mine != null && !to.equals(mine)) {
+                format = "sealed-to-someone-else";
+                error = "this envelope is sealed to " + to + ", not to " + mine;
+            } else if (keys == null || from == null || from.isEmpty()) {
+                format = "sealed-unchecked";
+            } else {
                 try {
                     opened = Codec.utf8(keys.open(from, body));
                     format = "sealed";
@@ -264,6 +277,12 @@ public final class Client {
                     format = "unreadable";
                     error = e.getMessage();
                 }
+            }
+            if (!"sealed".equals(format)) {
+                // Nothing was opened, so there is no payload here. json used to
+                // hold the envelope itself, and a caller reading "json is not
+                // null" as "this was decoded" got the envelope instead.
+                return new Message(seq, at, from, verified, sealed, body, opened, format, error, null);
             }
         }
         return new Message(seq, at, from, verified, sealed, body, opened, format, error, Json.object(text));
