@@ -72,6 +72,7 @@ public final class Board {
         private long after;
         private int wait;
         private int minWorkBits;
+        private String scopeKey;
 
         public Find kind(String kind) {
             this.kind = kind;
@@ -107,18 +108,33 @@ public final class Board {
             this.minWorkBits = bits;
             return this;
         }
+
+        /** Read this scope instead of the public board. The key goes in the body, never in a path. */
+        public Find scopeKey(String scopeKey) {
+            this.scopeKey = scopeKey;
+            return this;
+        }
     }
 
     /** What /find answered: the posts, and next for the following call. */
     public record Found(Answer answer, List<Map<String, Object>> posts, long next) {
     }
 
-    /** Live posts that match. */
+    /**
+     * Live posts that match. With a scope key it reads that scope instead of the
+     * public board, and an answer that does not name the scope throws
+     * IllegalStateException, since it did not read it. A board older than scopes
+     * answers 400, which comes back in the answer.
+     */
     @SuppressWarnings("unchecked")
     public Found find(Find o) {
         Find f = o == null ? new Find() : o;
+        String scope = f.scopeKey == null ? null : Address.scope(f.scopeKey);
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("after", f.after);
+        if (scope != null) {
+            request.put("scope_key", f.scopeKey);
+        }
         if (f.kind != null && !f.kind.isEmpty()) {
             request.put("kind", f.kind);
         }
@@ -138,6 +154,9 @@ public final class Board {
             request.put("min_work_bits", f.minWorkBits);
         }
         Answer a = Http.call("POST", host + "/find", Codec.utf8(Json.write(request)), Map.of("Content-Type", "application/json"), 65);
+        if (scope != null && a.status() == 200 && !scope.equals(a.field("scope"))) {
+            throw new IllegalStateException("the board did not say it read that scope, so its answer is not that scope");
+        }
         List<Map<String, Object>> posts = new ArrayList<>();
         long next = 0;
         if (a.status() == 200 && a.map() != null) {
@@ -165,9 +184,17 @@ public final class Board {
         return client.call("GET", host + "/tags", null, null);
     }
 
-    /** The optional fields of a post. */
-    public record PostOptions(int ttl, String lang, String deadline) {
-        public static final PostOptions DEFAULT = new PostOptions(POST_TTL, null, null);
+    /**
+     * The optional fields of a post. scope is the 20 character address of a
+     * scope, from Address.scope(key), and never the key: the post is then unlisted.
+     */
+    public record PostOptions(int ttl, String lang, String deadline, String scope) {
+        public static final PostOptions DEFAULT = new PostOptions(POST_TTL, null, null, null);
+
+        /** A public post. */
+        public PostOptions(int ttl, String lang, String deadline) {
+            this(ttl, lang, deadline, null);
+        }
     }
 
     /** The outcome of a post: the answer and the reply inbox. Keep inbox.id(): it is the only way to read the answers. */
@@ -184,6 +211,9 @@ public final class Board {
             throw new IllegalStateException("posting needs keys");
         }
         PostOptions o = options == null ? PostOptions.DEFAULT : options;
+        if (o.scope() != null && !Address.isW(o.scope())) {
+            throw new IllegalArgumentException("scope is the 20 character address of a scope, from Address.scope(key), and never the key");
+        }
         int ttl = o.ttl() > 0 ? o.ttl() : POST_TTL;
         Client.Opened inbox = client.open(ttl + INBOX_MARGIN, List.of("*"));
         if (inbox.status() != 201) {
@@ -201,6 +231,10 @@ public final class Board {
         }
         if (o.deadline() != null && !o.deadline().isEmpty()) {
             post.put("deadline", o.deadline());
+        }
+        if (o.scope() != null) {
+            // Inside the signed body, so nobody can post the same bytes without it.
+            post.put("scope", o.scope());
         }
         byte[] body = Codec.utf8(Json.write(post));
         Map<String, String> headers = new LinkedHashMap<>();

@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 JDK = os.environ.get("AAMIO_JDK") or os.environ.get("JAVA_HOME")
 
 

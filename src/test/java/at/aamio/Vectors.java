@@ -244,6 +244,71 @@ public final class Vectors {
         Check.ok(new Client(null, null).decode(raw).format().equals("sealed-to-someone-else"), "a client without keys leaves it sealed");
         Http.override = null;
 
+        Check.section("scopes");
+        Map<String, Object> scopeVector = (Map<String, Object>) v.get("scope");
+        String scopeKey = (String) scopeVector.get("key");
+        String scopeAddress = (String) scopeVector.get("address");
+        Check.ok(Address.scope(scopeKey).equals(scopeAddress) && Address.w(scopeKey).equals(scopeVector.get("thread_w_of_the_same_string")), "scope(key) is the shared vector, never the thread address of the same string");
+        String freshScope = Address.newScopeKey();
+        Check.ok(Address.isScopeKey(freshScope) && freshScope.length() == 26 && Address.isW(Address.scope(freshScope)) && !Address.isScopeKey(Address.scope(freshScope)), "a new scope key has the form, and its address is never a key");
+        threw = false;
+        try {
+            Address.scope(scopeAddress);
+        } catch (IllegalArgumentException refused) {
+            threw = true;
+        }
+        Check.ok(threw, "an address is refused where the key goes");
+        List<String[]> boardLog = new ArrayList<>();
+        String[] findAnswer = {"{\"count\":1,\"live\":1,\"next\":3,\"posts\":[{\"id\":\"pppppppppppppppppppp\"}],\"scope\":\"" + scopeAddress + "\"}"};
+        int[] findStatus = {200};
+        Http.override = (method, url, reqBody, headers) -> {
+            String path = url.substring(url.indexOf('/', 8));
+            boardLog.add(new String[] {method, path, reqBody == null ? "" : Codec.utf8(reqBody), headers.getOrDefault("X-Sig", ""), headers.getOrDefault("X-Key", "")});
+            if (method.equals("PUT")) {
+                return new Http.Answer(201, Json.object("{\"w\":\"" + path.substring(1) + "\",\"expire_at\":4102444800,\"allow\":[\"*\"]}"), Map.of());
+            }
+            if (path.endsWith("aamio-board.json")) {
+                return new Http.Answer(200, Json.object("{\"work\":{\"advise_bits\":0}}"), Map.of());
+            }
+            if (path.equals("/find")) {
+                return new Http.Answer(findStatus[0], Json.object(findAnswer[0]), Map.of());
+            }
+            if (method.equals("POST") && path.equals("/")) {
+                return new Http.Answer(201, Json.object("{\"id\":\"pppppppppppppppppppp\"}"), Map.of());
+            }
+            return new Http.Answer(404, Json.object("{\"error\":\"no\",\"fix\":\"no\"}"), Map.of());
+        };
+        Board board = new Board(new Client("https://fake.test", ka), "https://board.fake.test");
+        Board.Posted scopedPost = board.post("need", "Chapter 3 draft ready", "At commit 4f2a9c1.", List.of("chapter-03"), new Board.PostOptions(900, null, null, scopeAddress));
+        String[] sentPost = boardLog.get(boardLog.size() - 1);
+        Check.ok(scopedPost.status() == 201 && scopeAddress.equals(Json.object(sentPost[2]).get("scope")) && !sentPost[2].contains(scopeKey) && Keys.verify(sentPost[4], sentPost[3], Keys.boardSigningInput(sentPost[4], Codec.utf8(sentPost[2]))), "a post in a scope carries the address inside what is signed, and never the key");
+        threw = false;
+        try {
+            board.post("need", "t", "x", List.of(), new Board.PostOptions(900, null, null, scopeKey));
+        } catch (IllegalArgumentException refused) {
+            threw = true;
+        }
+        Check.ok(threw, "a key where the address goes is refused");
+        Board.Found inScope = board.find(new Board.Find().tags(List.of("chapter-03")).scopeKey(scopeKey));
+        String[] sentFind = boardLog.get(boardLog.size() - 1);
+        Check.ok(inScope.posts().size() == 1 && inScope.next() == 3 && scopeKey.equals(Json.object(sentFind[2]).get("scope_key")) && !sentFind[1].contains(scopeKey), "a find with the scope key sends it in the body and reads the scope");
+        findAnswer[0] = "{\"count\":0,\"live\":0,\"next\":0,\"posts\":[]}";
+        threw = false;
+        try {
+            board.find(new Board.Find().scopeKey(scopeKey));
+        } catch (IllegalStateException refused) {
+            threw = refused.getMessage().contains("did not say it read that scope");
+        }
+        Check.ok(threw, "an answer that does not name the scope is not believed");
+        findStatus[0] = 400;
+        findAnswer[0] = "{\"error\":\"Unknown field scope_key\",\"fix\":\"Drop that field\"}";
+        Check.ok(board.find(new Board.Find().scopeKey(scopeKey)).answer().status() == 400, "a board older than scopes refuses, and the refusal comes back");
+        findStatus[0] = 200;
+        findAnswer[0] = "{\"count\":0,\"live\":0,\"next\":0,\"posts\":[]}";
+        board.find(new Board.Find());
+        Check.ok(!Json.object(boardLog.get(boardLog.size() - 1)[2]).containsKey("scope_key"), "a find without a scope key reads the public board");
+        Http.override = null;
+
         System.exit(Check.done());
     }
 }
