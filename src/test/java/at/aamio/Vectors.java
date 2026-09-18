@@ -171,7 +171,16 @@ public final class Vectors {
         Check.ok(p.bits() == -1 && p.notes().size() == 1 && p.stop() == null, "advised 19 bits are passed over with a note");
         p = Gate.plan(Gate.parse("{\"require\":{\"pow\":{\"bits\":20,\"covers\":1},\"per_key\":3,\"write_until\":1800000000}}"));
         Check.ok(p.bits() == 20 && p.stop() == null, "required 20 bits are done; per_key and write_until are known");
-        Check.ok(Gate.plan(Gate.parse("{\"require\":{\"pow\":{\"bits\":21}}}")).stop().contains("21"), "required 21 bits stop the send");
+        Check.ok(Gate.plan(Gate.parse("{\"require\":{\"pow\":{\"bits\":33}}}")).stop().contains("33"), "required 33 bits stop the send");
+        Check.ok(Gate.REQUIRE_MAX_BITS == 32 && Gate.ADVISE_MAX_BITS == 18, "the ceilings are the service's, 32 required and 18 advised");
+        // A minute: no loop like this one does 32 bits in that, on any machine.
+        Gate.Plan heavy = Gate.plan(Gate.parse("{\"require\":{\"pow\":{\"bits\":32}}}"), 60);
+        Check.ok(heavy.stop() != null && heavy.stop().contains("not started") && heavy.stop().contains("nothing was sent"), "32 bits with a minute left is not started, and says how long it would take");
+        Gate.Plan fits = Gate.plan(Gate.parse("{\"require\":{\"pow\":{\"bits\":20}}}"), 3600);
+        Check.ok(fits.stop() == null && fits.bits() == 20 && fits.expectedSeconds() > 0, "work that fits goes ahead, with how long it takes here");
+        long started = System.nanoTime();
+        Check.ok(Gate.solveUntil("wwwwwwwwwwwwwwwwwwww", "k".repeat(43), Codec.utf8("body"), 30, java.time.Instant.now().plusMillis(300)) == null && System.nanoTime() - started < 5_000_000_000L, "work past its deadline is stopped");
+        Check.ok(Math.abs(Gate.expectedSeconds(21) - 2 * Gate.expectedSeconds(20)) < 1e-6 * Gate.expectedSeconds(21) && Gate.describe(600).equals("10 minutes"), "the estimate doubles with each bit, and a time reads as a time");
         Check.ok(Gate.plan(Gate.parse("{\"require\":{\"captcha\":true}}")).stop().contains("captcha"), "an unknown requirement stops the send and names it");
         p = Gate.plan(Gate.parse("{\"advise\":{\"captcha\":true,\"pow\":{\"bits\":8}}}"));
         Check.ok(p.stop() == null && p.bits() == 8 && p.notes().size() == 1, "an unknown advice is passed over, the known one is done");
@@ -332,6 +341,44 @@ public final class Vectors {
         Http.override = (method, url, reqBody, headers) -> new Http.Answer(200, readBody, Map.of());
         Board.Replies everything = board.replies("wwwwwwwwwwwwwwwwwwww", "read-key", 0, 0);
         Check.ok(everything.replies().size() == 3 && "p1".equals(everything.replies().get(0).post()) && "p2".equals(everything.replies().get(1).post()) && everything.replies().get(2).post() == null && everything.next() == 7, "replies hands over every message it read, answers to other posts included, and the cursor covers exactly those");
+
+        // A gate kept for an address, and a new inbox at the same address: the
+        // time a kept gate said counted down to nothing and stayed there, and a
+        // send to the new inbox was refused on the old one's terms without the
+        // service being asked.
+        int[] lifeReads = {0};
+        List<String> lifePosts = new ArrayList<>();
+        String[][] lifeGates = {{"{\"require\":{\"pow\":{\"bits\":17,\"covers\":1}}}", "0"}, {"{}", "600"}};
+        Http.override = (method, url, reqBody, headers) -> {
+            if (url.endsWith("/gate")) {
+                String[] life = lifeGates[Math.min(lifeReads[0]++, lifeGates.length - 1)];
+                return new Http.Answer(200, Json.object(life[0]), Map.of("x-seconds-left", life[1]));
+            }
+            lifePosts.add(url);
+            return new Http.Answer(201, Json.object("{\"seq\":1}"), Map.of());
+        };
+        Client lives = new Client("https://fake.test", ka);
+        lives.gate("qqqqqqqqqqqqqqqqqqqq", false);
+        Client.Sent there = lives.send("qqqqqqqqqqqqqqqqqqqq", "hello");
+        Check.ok(!there.stopped() && there.status() == 201 && lifeReads[0] == 2 && lifePosts.size() == 1, "a new inbox at an old address is asked about once more before a no, and the send goes through");
+        Http.override = (method, url, reqBody, headers) -> url.endsWith("/gate") ? new Http.Answer(200, Json.object("{}"), Map.of("x-seconds-left", "600")) : new Http.Answer(410, Json.object("{\"error\":\"Thread has expired\",\"fix\":\"open a new one\"}"), Map.of());
+        Client expired = new Client("https://fake.test", ka);
+        Check.ok(expired.send("qqqqqqqqqqqqqqqqqqqq", "hello").status() == 410 && expired.secondsLeft("qqqqqqqqqqqqqqqqqqqq") < 0, "an inbox that answers 410 takes its gate with it");
+
+        // The time an inbox still takes writes comes from a header on its gate,
+        // and a send whose work cannot fit in it sends nothing and says why.
+        List<String> heavyPosts = new ArrayList<>();
+        Http.override = (method, url, reqBody, headers) -> {
+            if (url.endsWith("/gate")) {
+                return new Http.Answer(200, Json.object("{\"require\":{\"pow\":{\"bits\":26,\"covers\":1}}}"), Map.of("x-seconds-left", "5"));
+            }
+            heavyPosts.add(url);
+            return new Http.Answer(201, Json.object("{\"seq\":1}"), Map.of());
+        };
+        Client timed = new Client("https://fake.test", ka);
+        Client.Sent refused = timed.send("qqqqqqqqqqqqqqqqqqqq", "hello");
+        double left = timed.secondsLeft("qqqqqqqqqqqqqqqqqqqq");
+        Check.ok(refused.stopped() && String.valueOf(refused.answer().field("error")).contains("not started") && heavyPosts.isEmpty() && left <= 5 && left > 4, "the time left is read from the gate, and a send whose work cannot fit sends nothing and says why");
 
         Http.override = null;
 

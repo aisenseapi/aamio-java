@@ -23,6 +23,8 @@ public final class Client {
     private final String host;
     private final Keys keys;
     private final Map<String, Map<String, Object>> gates = Collections.synchronizedMap(new HashMap<>());
+    /** X-Seconds-Left per address, and the System.nanoTime it was read at. */
+    private final Map<String, double[]> gateLeft = Collections.synchronizedMap(new HashMap<>());
     private final int timeout;
 
     public Client(String host, Keys keys) {
@@ -95,9 +97,48 @@ public final class Client {
         Map<String, Object> gate = null;
         if (a.status() == 200) {
             gate = a.map() != null ? a.map() : new LinkedHashMap<>();
+            // The time left rides in a header, since the body is the exact bytes
+            // the gate hash is taken over.
+            String left = a.headers() == null ? null : a.headers().get("x-seconds-left");
+            if (left != null && left.matches("\\d+")) {
+                gateLeft.put(w, new double[] {Double.parseDouble(left), System.nanoTime()});
+            }
         }
         gates.put(w, gate);
         return gate;
+    }
+
+    /** Drops the gate kept for w and the time it said: they belong to an inbox that may not be there now. */
+    public void forgetGate(String w) {
+        gates.remove(w);
+        gateLeft.remove(w);
+    }
+
+    /**
+     * The plan for w's gate, read again once before a no that rests on a gate
+     * read earlier. A gate never changes while its thread lives, which is why
+     * it is kept, but an address can have more than one life: the time a kept
+     * gate said counted down to nothing and stayed there, and a new inbox at
+     * the same address was refused on the old one's terms without the service
+     * being asked.
+     */
+    public Gate.Plan planTo(String w) {
+        boolean cached = gates.containsKey(w);
+        Gate.Plan plan = Gate.plan(gate(w, false), secondsLeft(w));
+        if (plan.stop() != null && cached) {
+            forgetGate(w);
+            plan = Gate.plan(gate(w, false), secondsLeft(w));
+        }
+        return plan;
+    }
+
+    /** How long w still takes writes, counted down from what its gate said; -1 when it did not say. */
+    public double secondsLeft(String w) {
+        double[] said = gateLeft.get(w);
+        if (said == null) {
+            return -1;
+        }
+        return Math.max(0, said[0] - (System.nanoTime() - said[1]) / 1e9);
     }
 
     /** How a write is shaped: unsigned, sealed to a key, or marked as JSON. */
@@ -154,7 +195,7 @@ public final class Client {
         }
         boolean signing = !o.unsigned() && keys != null;
         String key = signing ? keys.publicKey() : "";
-        Gate.Plan plan = Gate.plan(gate(w, false));
+        Gate.Plan plan = planTo(w);
         List<String> notes = new ArrayList<>(plan.notes());
         if (plan.stop() != null) {
             Map<String, Object> refusal = new LinkedHashMap<>();
@@ -175,12 +216,27 @@ public final class Client {
             }
             String work = null;
             if (bits > 0) {
-                work = Gate.solve(w, key, payload, bits);
+                // The work stops when the inbox would close, less a few seconds
+                // for the post itself: past that a nonce buys nothing but a 410.
+                double left = secondsLeft(w);
+                work = Gate.solveUntil(w, key, payload, bits, left < 0 ? null : java.time.Instant.now().plusMillis((long) (Math.max(0, left - 5) * 1000)));
+                if (work == null) {
+                    return new Attempt(null, null);
+                }
                 headers.put("X-Work", work);
             }
             return new Attempt(call("POST", host + "/" + w, payload, headers), work);
         };
+        java.util.function.IntFunction<Sent> ranOut = bits -> {
+            Map<String, Object> refusal = new LinkedHashMap<>();
+            refusal.put("error", "the proof of work of " + bits + " bits was not done before the inbox stops taking writes, so the work was stopped and nothing was sent");
+            refusal.put("fix", "The estimate before it started said it would fit, and this time it took longer, which happens: the work is a lottery. Ask the owner for a longer inbox, or send from a machine with more compute.");
+            return new Sent(new Answer(0, refusal, Map.of()), null, null, notes, true);
+        };
         Attempt done = attempt.apply(plan.bits());
+        if (done.answer() == null) {
+            return ranOut.apply(plan.bits());
+        }
         if (done.answer().status() == 428 && done.answer().field("gate") instanceof Map<?, ?> again) {
             // The refusal carries the whole gate; meet it once, never more.
             Map<String, Object> gate = new LinkedHashMap<>();
@@ -188,11 +244,29 @@ public final class Client {
                 gate.put(String.valueOf(e.getKey()), e.getValue());
             }
             gates.put(w, gate);
-            Gate.Plan second = Gate.plan(gate);
-            if (second.stop() == null && second.bits() > 0) {
+            if (done.answer().field("seconds_left") instanceof Number left) {
+                gateLeft.put(w, new double[] {left.doubleValue(), System.nanoTime()});
+            }
+            Gate.Plan second = Gate.plan(gate, secondsLeft(w));
+            if (second.stop() != null) {
+                Map<String, Object> refusal = new LinkedHashMap<>();
+                refusal.put("error", second.stop());
+                refusal.put("fix", "Open an address whose conditions this client can meet, or update the client.");
+                notes.addAll(second.notes());
+                return new Sent(new Answer(0, refusal, Map.of()), null, null, notes, true);
+            }
+            if (second.bits() > 0) {
                 done = attempt.apply(second.bits());
+                if (done.answer() == null) {
+                    return ranOut.apply(second.bits());
+                }
                 notes.addAll(second.notes());
             }
+        }
+        // An inbox that is not there, or has expired, takes its gate with it:
+        // the next send here reads the gate of whatever is there then.
+        if (done.answer().status() == 404 || done.answer().status() == 410) {
+            forgetGate(w);
         }
         return new Sent(done.answer(), payload, done.work(), notes, false);
     }

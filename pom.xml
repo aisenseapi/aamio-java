@@ -4,7 +4,7 @@
 
   <groupId>at.aamio</groupId>
   <artifactId>aamio</artifactId>
-  <version>0.2.2</version>
+  <version>0.2.3</version>
   <packaging>jar</packaging>
 
   <name>aamio</name>
