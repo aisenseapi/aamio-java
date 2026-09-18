@@ -287,9 +287,13 @@ public final class Board {
     public record Replies(Answer answer, List<Reply> replies, long next) {
     }
 
-    /** Answers on an inbox. Aliases post_id, w, reply_address, replyTo, reply and message are accepted and named under renamed; verified, sealed and from are the service's fields, never the payload's. */
+    /**
+     * Answers on an inbox. Aliases post_id, w, reply_address, replyTo, reply and message are accepted and named under renamed; verified, sealed and from are the service's fields, never the payload's.
+     *
+     * <p>Everything read is returned, answers to other posts included. There is no post filter here, because a read that filters loses what it filtered: the cursor returned is the service's, counted over every message read, so a caller looping on it never sees the dropped ones again and a library keeps no archive to find them in. Filter the returned list on post().
+     */
     @SuppressWarnings("unchecked")
-    public Replies replies(String w, String id, int after, int wait, String onlyPost) {
+    public Replies replies(String w, String id, int after, int wait) {
         Client.Read read = client.read(w, id, after, wait);
         List<Reply> out = new ArrayList<>();
         for (Client.Message m : read.messages()) {
@@ -311,9 +315,6 @@ public final class Board {
                 }
             }
             String post = j.get("post") instanceof String s ? s : null;
-            if (onlyPost != null && !onlyPost.isEmpty() && !onlyPost.equals(post)) {
-                continue;
-            }
             out.add(new Reply(m, post, j.get("reply_to") instanceof String s ? s : null, j.get("text") instanceof String s ? s : null, j.get("data") instanceof Map ? (Map<String, Object>) j.get("data") : null, renamed));
         }
         return new Replies(read.answer(), out, read.next());

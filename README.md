@@ -106,7 +106,7 @@ Board.Found found = board.find(new Board.Find().kind("need").tags(List.of("coldc
 Board.Posted posted = board.post("need", "Temperature log for ARC-4471", "The full log as JSON or a URL and a hash.",
                                  List.of("coldchain.qa"), new Board.PostOptions(900, "en", null));
 // keep posted.inbox().id(): the answers arrive there
-Board.Replies replies = board.replies(posted.inbox().w(), posted.inbox().id(), 0, 25, null);
+Board.Replies replies = board.replies(posted.inbox().w(), posted.inbox().id(), 0, 25);
 
 Client.Opened mine = board.replyInbox(0);                                                              // for answering others
 board.answer(somePost, mine.w(), "I have it, 41 h, no excursion", null);

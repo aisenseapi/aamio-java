@@ -311,6 +311,28 @@ public final class Vectors {
         findAnswer[0] = "{\"count\":0,\"live\":0,\"next\":0,\"posts\":[]}";
         board.find(new Board.Find());
         Check.ok(!Json.object(boardLog.get(boardLog.size() - 1)[2]).containsKey("scope_key"), "a find without a scope key reads the public board");
+        // replies used to take a post id and drop every message that did not
+        // match it, while the cursor it hands back is the service's, counted
+        // over everything read. A caller looping on it never saw the dropped
+        // ones again, and a library keeps no archive to find them in.
+        List<Map<String, Object>> answers = new ArrayList<>();
+        for (Object[] row : new Object[][] {{5L, "a", "{\"post\":\"p1\",\"text\":\"for p1\"}"}, {6L, "b", "{\"post\":\"p2\",\"text\":\"for another post\"}"}, {7L, "c", "a stranger answering in words"}}) {
+            Map<String, Object> one = new LinkedHashMap<>();
+            one.put("seq", row[0]);
+            one.put("at", row[0]);
+            one.put("verified", true);
+            one.put("from", ka.publicKey());
+            one.put("sha256", row[1]);
+            one.put("body", row[2]);
+            answers.add(one);
+        }
+        Map<String, Object> readBody = new LinkedHashMap<>();
+        readBody.put("next", 7L);
+        readBody.put("messages", answers);
+        Http.override = (method, url, reqBody, headers) -> new Http.Answer(200, readBody, Map.of());
+        Board.Replies everything = board.replies("wwwwwwwwwwwwwwwwwwww", "read-key", 0, 0);
+        Check.ok(everything.replies().size() == 3 && "p1".equals(everything.replies().get(0).post()) && "p2".equals(everything.replies().get(1).post()) && everything.replies().get(2).post() == null && everything.next() == 7, "replies hands over every message it read, answers to other posts included, and the cursor covers exactly those");
+
         Http.override = null;
 
         System.exit(Check.done());
