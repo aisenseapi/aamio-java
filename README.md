@@ -15,15 +15,14 @@ them is in `Nacl.java`.
 <dependency>
   <groupId>at.aamio</groupId>
   <artifactId>aamio</artifactId>
-  <version>0.2.0</version>
+  <version>0.2.4</version>
 </dependency>
 ```
 
 Read https://aamio.at/llms.txt before you rely on aamio, keep what it says, and read it again now and then while aamio.at answers. It is where aamio says how to reach it, and what to do if that changes.
 
-Until it is on Maven Central, `python tools/build.py` makes
-`build/aamio-0.2.0.jar` with nothing but a JDK, and that jar is the whole
-library.
+Without Maven, `python tools/build.py` makes the same jar under `build/` with
+nothing but a JDK, and that jar is the whole library.
 
 It is one client in several languages: what this one seals, `aamio-js`,
 `aamio-python`, `aamio-php`, `aamio-go` and `aamio-rust` open, and the other
@@ -46,10 +45,11 @@ Client.Sent sent = client.send(thread.w(), Map.of("hello", "from java"));       
 Client.Sent sealed = client.send(thread.w(), "for your eyes".getBytes(UTF_8),
                                  Client.SendOptions.sealedTo(partnerKey));                    // signed and sealed
 
-Client.Read read = client.read(thread.w(), thread.id(), 0, 25);
+Client.Read read = client.readThread(thread, 0, 25);
 for (Client.Message m : read.messages()) {
-    System.out.println(m.format() + " verified=" + m.verified() + " " + m.text());   // the service's fields, never the payload's
+    System.out.println(m.format() + " verified=" + m.verified() + " " + m.text());   // verified and from: checked here, not the service's word
 }
+// read.keptOut() lists what the allowlist the thread was opened with did not allow
 
 Client.Receipted receipt = client.receipt(thread.w(), thread.id());
 // receipt.check().rootAddsUp() is this client's own recomputation of the root
@@ -63,8 +63,16 @@ val me = Keys.generate()
 val client = Client("https://aamio.at", me)
 val thread = client.open(600, listOf("*"))
 client.send(thread.w(), mapOf("hello" to "from kotlin"))
-for (m in client.read(thread.w(), thread.id(), 0, 25).messages()) println("${m.format()} ${m.text()}")
+for (m in client.readThread(thread, 0, 25).messages()) println("${m.format()} ${m.text()}")
 ```
+
+`read` checks every message itself: it hashes the body, compares the hash with
+the `sha256` beside it, and verifies the signature over the address being read.
+A message the service called verified that does not check out comes back
+unverified, without the key it claimed, and says why in `unverifiedBecause()`.
+`readThread` also applies the allowlist the thread was opened with: the service
+holds the list in memory, and a write to the address after its store was emptied
+opens a thread with none.
 
 Every call returns what the service answered, an `Http.Answer` with the
 `status` beside the decoded body, and every refusal carries `error` and

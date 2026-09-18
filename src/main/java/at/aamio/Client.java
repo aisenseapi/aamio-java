@@ -56,8 +56,21 @@ public final class Client {
 
     // ------------------------------------------------------------- threads --
 
-    /** An opened thread: keep id, share w. */
-    public record Opened(String id, String w, Answer answer) {
+    /**
+     * An opened thread: keep id, share w. allow is the allowlist it was opened
+     * with, kept here because the service holds it in memory only: see
+     * readThread. It is empty for a thread opened without one.
+     */
+    public record Opened(String id, String w, List<String> allow, Answer answer) {
+        public Opened {
+            allow = allow == null ? List.of() : List.copyOf(allow);
+        }
+
+        /** A thread with no allowlist of its own. */
+        public Opened(String id, String w, Answer answer) {
+            this(id, w, List.of(), answer);
+        }
+
         public int status() {
             return answer.status();
         }
@@ -83,7 +96,7 @@ public final class Client {
             headers.put("X-Allow", String.join(",", allow));
         }
         byte[] body = gate == null ? null : Codec.utf8(Json.write(Map.of("gate", gate)));
-        return new Opened(id, w, call("PUT", host + "/" + w, body, headers));
+        return new Opened(id, w, allow, call("PUT", host + "/" + w, body, headers));
     }
 
     /** The conditions an inbox was opened with, read once per address unless fresh: an empty map for none, null when the thread is gone. */
@@ -277,18 +290,100 @@ public final class Client {
      * unreadable or sealed-to-someone-else; json is the body (or the opened
      * plaintext) as an object when it parses as one.
      */
-    public record Message(long seq, long at, String from, boolean verified, boolean sealed, String body, String opened, String format, String error, Map<String, Object> json) {
+    public record Message(long seq, long at, String from, boolean verified, boolean sealed, String body, String opened, String format, String error, Map<String, Object> json, String unverifiedBecause) {
+        /** A message with nothing said against it. */
+        public Message(long seq, long at, String from, boolean verified, boolean sealed, String body, String opened, String format, String error, Map<String, Object> json) {
+            this(seq, at, from, verified, sealed, body, opened, format, error, json, null);
+        }
+
         /** The opened plaintext when sealed, else the body. */
         public String text() {
             return opened != null ? opened : body;
         }
     }
 
-    /** What a read answered, decoded. */
-    public record Read(Answer answer, List<Message> messages, long next) {
+    /** A message the thread's own allowlist kept out of what readThread handed over. */
+    public record KeptOut(long seq, String why) {
     }
 
-    /** Reads with the read key from after, waiting up to wait seconds (25 at most). */
+    /** What a read answered, decoded. keptOut is what readThread left out, and empty for a plain read. */
+    public record Read(Answer answer, List<Message> messages, long next, List<KeptOut> keptOut) {
+        public Read(Answer answer, List<Message> messages, long next) {
+            this(answer, messages, next, List.of());
+        }
+    }
+
+    /** What this client found when it checked a message: see checkMessage. */
+    public record Checked(boolean verified, String whyNot, String sha256) {
+    }
+
+    /**
+     * Checks one message as the service returned it: the body is hashed and
+     * compared with the sha256 beside it, and the signature verified over the
+     * address being read. verified in an answer is the service's word, and the
+     * trust model says an operator cannot forge a signature, which only holds
+     * for a reader that checks. whyNot is null for a message that verified and
+     * for an ordinary unsigned one, and a sentence when something that should
+     * have held did not.
+     */
+    public static Checked checkMessage(String w, Map<?, ?> raw) {
+        if (!(raw.get("body") instanceof String body)) {
+            return new Checked(false, "the message has no body to check", null);
+        }
+        String digest = Codec.sha256Hex(body);
+        if (!digest.equals(raw.get("sha256"))) {
+            return new Checked(false, "the body does not hash to the sha256 the service gave with it, so these are not the bytes that were stored", digest);
+        }
+        String from = raw.get("from") instanceof String s ? s : "";
+        String signature = raw.get("sig") instanceof String s ? s : "";
+        boolean claimed = Boolean.TRUE.equals(raw.get("verified"));
+        if (from.isEmpty() || signature.isEmpty()) {
+            return new Checked(false, claimed ? "the service calls it verified and gave no key or signature to check" : null, digest);
+        }
+        if (Keys.verify(from, signature, Keys.threadSigningInput(w, body))) {
+            return new Checked(true, null, digest);
+        }
+        return new Checked(false, "the signature does not check out for this key, this address and these bytes" + (claimed ? ", though the service said it did" : ""), digest);
+    }
+
+    /**
+     * read for a thread this client opened, with the allowlist it was opened
+     * with applied to what is read. The service enforces the list while it
+     * holds the thread, and it holds it in memory: a write to the address after
+     * its store was emptied opens a thread with no list. With named keys, only
+     * messages verified here from one of them are handed over; with "*", only
+     * messages verified here from any key. The rest is listed under keptOut,
+     * never dropped in silence. The cursor covers both.
+     */
+    public Read readThread(Opened thread, int after, int wait) {
+        Read read = read(thread.w(), thread.id(), after, wait);
+        if (thread.allow().isEmpty()) {
+            return read;
+        }
+        boolean anySigned = thread.allow().contains("*");
+        List<Message> handed = new ArrayList<>();
+        List<KeptOut> kept = new ArrayList<>();
+        for (Message m : read.messages()) {
+            if (m.verified() && m.from() != null && (anySigned || thread.allow().contains(m.from()))) {
+                handed.add(m);
+                continue;
+            }
+            kept.add(new KeptOut(m.seq(), anySigned
+                ? "this thread was opened for signed messages only, and this one did not verify here"
+                : "this thread was opened for named keys, and this one was not signed by one of them, as checked here"));
+        }
+        return new Read(read.answer(), handed, read.next(), kept);
+    }
+
+    /**
+     * Reads with the read key from after, waiting up to wait seconds (25 at most).
+     *
+     * Every message is checked here before it is handed over: the body is
+     * hashed and compared with the sha256 beside it, and the signature is
+     * verified over this address. verified and from on what comes back are this
+     * client's result, not the service's word, and a message the service called
+     * verified that does not check out says why in unverifiedBecause.
+     */
     public Read read(String w, String id, int after, int wait) {
         String path = "/" + w;
         if (after > 0 || wait > 0) {
@@ -310,7 +405,7 @@ public final class Client {
             if (a.field("messages") instanceof List<?> list) {
                 for (Object item : list) {
                     if (item instanceof Map<?, ?> raw) {
-                        messages.add(decode(raw));
+                        messages.add(decodeAt(w, raw));
                     }
                 }
             }
@@ -318,7 +413,35 @@ public final class Client {
         return new Read(a, messages, next);
     }
 
-    /** One raw message to a Message, opening it when it is sealed to us. verified, sealed and from are the service's fields, never the payload's. */
+    /**
+     * decode for a message read at w: the hash and the signature are checked
+     * first, and everything decode does goes by that result. A message that
+     * does not verify here has no from, so a sealed body under a forged sender
+     * is not opened against the key it claimed.
+     */
+    public Message decodeAt(String w, Map<?, ?> raw) {
+        Checked result = checkMessage(w, raw);
+        Map<String, Object> checked = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : raw.entrySet()) {
+            checked.put(String.valueOf(entry.getKey()), entry.getValue());
+        }
+        checked.put("verified", result.verified());
+        if (!result.verified()) {
+            checked.put("from", null);
+        }
+        if (result.sha256() != null) {
+            checked.put("sha256", result.sha256());
+        }
+        Message m = decode(checked);
+        return new Message(m.seq(), m.at(), m.from(), m.verified(), m.sealed(), m.body(), m.opened(), m.format(), m.error(), m.json(), result.whyNot());
+    }
+
+    /**
+     * One raw message to a Message, opening it when it is sealed to us.
+     * verified, sealed and from are never taken from the payload. decode takes
+     * the service's fields as they are; read goes through decodeAt, which
+     * checks them first.
+     */
     public Message decode(Map<?, ?> raw) {
         long seq = raw.get("seq") instanceof Number n ? n.longValue() : 0;
         long at = raw.get("at") instanceof Number n ? n.longValue() : 0;

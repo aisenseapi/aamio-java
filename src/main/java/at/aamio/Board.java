@@ -159,7 +159,9 @@ public final class Board {
         }
         List<Map<String, Object>> posts = new ArrayList<>();
         // The cursor the caller already has, so a refusal leaves it where it was.
-        long next = o.after;
+        // f, not o: find(null) is a find with every field empty, and reading the
+        // cursor off o threw NullPointerException after the call had gone out.
+        long next = f.after;
         if (a.status() == 200 && a.map() != null) {
             if (a.field("next") instanceof Number n) {
                 next = n.longValue();

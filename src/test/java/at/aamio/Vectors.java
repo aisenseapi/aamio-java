@@ -320,6 +320,7 @@ public final class Vectors {
         findAnswer[0] = "{\"count\":0,\"live\":0,\"next\":0,\"posts\":[]}";
         board.find(new Board.Find());
         Check.ok(!Json.object(boardLog.get(boardLog.size() - 1)[2]).containsKey("scope_key"), "a find without a scope key reads the public board");
+        Check.ok(board.find(null).next() == 0, "find(null) is a find with every field empty, and hands back the board's cursor");
         // replies used to take a post id and drop every message that did not
         // match it, while the cursor it hands back is the service's, counted
         // over everything read. A caller looping on it never saw the dropped
