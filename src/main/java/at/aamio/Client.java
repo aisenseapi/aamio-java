@@ -63,7 +63,7 @@ public final class Client {
      */
     public record Opened(String id, String w, List<String> allow, Answer answer) {
         public Opened {
-            allow = allow == null ? List.of() : List.copyOf(allow);
+            allow = normalizeAllow(allow);
         }
 
         /** A thread with no allowlist of its own. */
@@ -86,17 +86,30 @@ public final class Client {
 
     /** Opens a thread with a lifetime. allow lists signer keys, or ["*"] for any key as long as the message is signed; gate sets conditions, or null. */
     public Opened open(int ttl, List<String> allow, Map<String, Object> gate) {
+        allow = normalizeAllow(allow);
         String id = Address.newId();
         String w = Address.w(id);
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("X-Read", id);
         headers.put("X-TTL", Integer.toString(ttl));
         headers.put("Content-Type", "application/json");
-        if (allow != null) {
+        if (!allow.isEmpty()) {
             headers.put("X-Allow", String.join(",", allow));
         }
         byte[] body = gate == null ? null : Codec.utf8(Json.write(Map.of("gate", gate)));
         return new Opened(id, w, allow, call("PUT", host + "/" + w, body, headers));
+    }
+
+    private static List<String> normalizeAllow(List<String> allow) {
+        List<String> out = new ArrayList<>();
+        for (String entry : allow == null ? List.<String>of() : allow) {
+            if (entry == null) throw new IllegalArgumentException("an allowlist entry must be a string");
+            for (String part : entry.split(",")) {
+                String key = part.trim();
+                if (!key.isEmpty() && !out.contains(key)) out.add(key);
+            }
+        }
+        return out.contains("*") ? List.of("*") : List.copyOf(out);
     }
 
     /** The conditions an inbox was opened with, read once per address unless fresh: an empty map for none, null when the thread is gone. */
@@ -303,7 +316,10 @@ public final class Client {
     }
 
     /** A message the thread's own allowlist kept out of what readThread handed over. */
-    public record KeptOut(long seq, String why) {
+    public record KeptOut(long seq, String why, String unverifiedBecause) {
+        public KeptOut(long seq, String why) {
+            this(seq, why, null);
+        }
     }
 
     /** What a read answered, decoded. keptOut is what readThread left out, and empty for a plain read. */
@@ -370,7 +386,7 @@ public final class Client {
             }
             kept.add(new KeptOut(m.seq(), anySigned
                 ? "this thread was opened for signed messages only, and this one did not verify here"
-                : "this thread was opened for named keys, and this one was not signed by one of them, as checked here"));
+                : "this thread was opened for named keys, and this one was not signed by one of them, as checked here", m.unverifiedBecause()));
         }
         return new Read(read.answer(), handed, read.next(), kept);
     }
@@ -404,9 +420,7 @@ public final class Client {
             }
             if (a.field("messages") instanceof List<?> list) {
                 for (Object item : list) {
-                    if (item instanceof Map<?, ?> raw) {
-                        messages.add(decodeAt(w, raw));
-                    }
+                    messages.add(decodeAt(w, item instanceof Map<?, ?> raw ? raw : Map.of()));
                 }
             }
         }
@@ -420,6 +434,18 @@ public final class Client {
      * is not opened against the key it claimed.
      */
     public Message decodeAt(String w, Map<?, ?> raw) {
+        try {
+            return checkedDecode(w, raw);
+        } catch (RuntimeException e) {
+            long seq = raw != null && raw.get("seq") instanceof Long n ? n : 0;
+            long at = raw != null && raw.get("at") instanceof Long n ? n : 0;
+            String body = raw != null && raw.get("body") instanceof String s ? s : "";
+            String why = "the message could not be checked here: " + e.getClass().getSimpleName();
+            return new Message(seq, at, null, false, false, body, null, "unreadable", why, null, why);
+        }
+    }
+
+    private Message checkedDecode(String w, Map<?, ?> raw) {
         Checked result = checkMessage(w, raw);
         Map<String, Object> checked = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : raw.entrySet()) {
@@ -439,8 +465,8 @@ public final class Client {
     /**
      * One raw message to a Message, opening it when it is sealed to us.
      * verified, sealed and from are never taken from the payload. decode takes
-     * the service's fields as they are; read goes through decodeAt, which
-     * checks them first.
+     * the service's fields as they are: UNSAFE for remote input and not a
+     * verification API. Use decodeAt or read for remotely supplied messages.
      */
     public Message decode(Map<?, ?> raw) {
         long seq = raw.get("seq") instanceof Number n ? n.longValue() : 0;

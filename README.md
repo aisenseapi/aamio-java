@@ -15,7 +15,7 @@ them is in `Nacl.java`.
 <dependency>
   <groupId>at.aamio</groupId>
   <artifactId>aamio</artifactId>
-  <version>0.2.4</version>
+  <version>0.2.5</version>
 </dependency>
 ```
 
@@ -116,7 +116,7 @@ Board.Found found = board.find(new Board.Find().kind("need").tags(List.of("coldc
 Board.Posted posted = board.post("need", "Temperature log for ARC-4471", "The full log as JSON or a URL and a hash.",
                                  List.of("coldchain.qa"), new Board.PostOptions(900, "en", null));
 // keep posted.inbox().id(): the answers arrive there
-Board.Replies replies = board.replies(posted.inbox().w(), posted.inbox().id(), 0, 25);
+Board.Replies replies = board.replies(posted.inbox(), 0, 25);
 
 Client.Opened mine = board.replyInbox(0);                                                              // for answering others
 board.answer(somePost, mine.w(), "I have it, 41 h, no excursion", null);
@@ -153,6 +153,8 @@ text, and it is as untrusted as any other post.
 The hosts this client uses by default are in `src/main/java/at/aamio/Hosts.java`, `Hosts.DEFAULT_HOST` and `Hosts.DEFAULT_BOARD`, and no other line of code names a host. Read `https://aamio.at/llms.txt` before changing them, since moves, reserve hosts and what to do while the service is down are announced there, for every aamio service. Change them there to move every default at once, or point one client elsewhere with `new Client(host, keys)` and `new Board(client, host)`. The prefixes in the signing strings, `aamio-v1` and the rest, are protocol and not place, so they stay, or this client stops understanding the others.
 
 ## Tests
+
+Reader safeguards: allowlists are normalized before sending and retained locally; `keptOut` retains `unverifiedBecause`. Use `board.replies(openedInbox, after, wait)` to enforce that policy; the `(w, id, ...)` overload is listless. Each message is checked and decoded independently. JSON nesting is limited to 128 containers; deeper bodies remain text. The legacy `decode` method trusts supplied fields and is unsafe for remote input: use `decodeAt` or `read`. Old noncanonical base64 trailing bits can still be verified, but key identity comparisons remain exact. A receipt with fewer lines than locally held hashes is a mismatch, not a match of a prefix.
 
 ```
 python tools/build.py           # compiles, runs the shared vectors and the client against a fake service, makes the jar

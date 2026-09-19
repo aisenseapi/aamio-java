@@ -147,6 +147,7 @@ public final class Json {
     private static final class Parser {
         private final String s;
         private int pos;
+        private int depth;
 
         Parser(String s) {
             this.s = s;
@@ -159,6 +160,19 @@ public final class Json {
         }
 
         Object value() {
+            boolean container = peek() == '{' || peek() == '[';
+            if (container && depth >= 128) {
+                throw err("JSON nesting exceeds 128 containers");
+            }
+            if (container) depth++;
+            try {
+                return readValue();
+            } finally {
+                if (container) depth--;
+            }
+        }
+
+        Object readValue() {
             char c = peek();
             switch (c) {
                 case '{':

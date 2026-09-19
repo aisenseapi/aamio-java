@@ -38,7 +38,9 @@ public final class Receipt {
         boolean rootAddsUp = MessageDigest.isEqual(Codec.utf8(root(messages)), Codec.utf8(claimed));
         boolean commitmentMatches = ("sha256:" + claimed).equals(receipt.get("commitment"));
         Boolean local = null;
-        if (localHashes != null && messages.size() <= localHashes.size()) {
+        if (localHashes != null && messages.size() < localHashes.size()) {
+            local = false;
+        } else if (localHashes != null && messages.size() == localHashes.size()) {
             boolean match = true;
             int i = 0;
             for (Map<?, ?> m : sorted(messages)) {

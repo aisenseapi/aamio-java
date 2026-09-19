@@ -286,17 +286,29 @@ public final class Board {
     }
 
     /** What a read of a reply inbox gave. */
-    public record Replies(Answer answer, List<Reply> replies, long next) {
+    public record Replies(Answer answer, List<Reply> replies, long next, List<Client.KeptOut> keptOut) {
+        public Replies(Answer answer, List<Reply> replies, long next) {
+            this(answer, replies, next, List.of());
+        }
+    }
+
+    /** Reads with the policy retained when this inbox was opened. */
+    public Replies replies(Client.Opened inbox, int after, int wait) {
+        return decodeReplies(client.readThread(inbox, after, wait));
     }
 
     /**
-     * Answers on an inbox. Aliases post_id, w, reply_address, replyTo, reply and message are accepted and named under renamed; verified, sealed and from are the service's fields, never the payload's.
+     * Listless compatibility overload: use replies(Opened, after, wait) to enforce the inbox policy.
+     * Aliases are named under renamed; verified and from are locally checked, never payload claims.
      *
      * <p>Everything read is returned, answers to other posts included. There is no post filter here, because a read that filters loses what it filtered: the cursor returned is the service's, counted over every message read, so a caller looping on it never sees the dropped ones again and a library keeps no archive to find them in. Filter the returned list on post().
      */
-    @SuppressWarnings("unchecked")
     public Replies replies(String w, String id, int after, int wait) {
-        Client.Read read = client.read(w, id, after, wait);
+        return decodeReplies(client.read(w, id, after, wait));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Replies decodeReplies(Client.Read read) {
         List<Reply> out = new ArrayList<>();
         for (Client.Message m : read.messages()) {
             // An answer in plain text, or an envelope this client cannot open,
@@ -319,7 +331,7 @@ public final class Board {
             String post = j.get("post") instanceof String s ? s : null;
             out.add(new Reply(m, post, j.get("reply_to") instanceof String s ? s : null, j.get("text") instanceof String s ? s : null, j.get("data") instanceof Map ? (Map<String, Object>) j.get("data") : null, renamed));
         }
-        return new Replies(read.answer(), out, read.next());
+        return new Replies(read.answer(), out, read.next(), read.keptOut());
     }
 
     /** Takes one of this key's posts off the board. */

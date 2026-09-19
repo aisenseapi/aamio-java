@@ -137,6 +137,60 @@ public final class Reader {
         Client.Opened opened = client.open(120, List.of("*"));
         Check.ok(opened.allow().equals(List.of("*")) && client.open(120).allow().isEmpty(), "open keeps the list it sent");
 
+        Check.section("normalization before network and policy-aware board reads");
+        int[] calls = {0};
+        Http.override = (method, url, reqBody, headers) -> {
+            calls[0]++;
+            Check.ok((alice.publicKey() + "," + mallory.publicKey()).equals(headers.get("X-Allow")), "normalized header");
+            return new Http.Answer(201, Map.of("allow", List.of("*")), Map.of());
+        };
+        opened = client.open(120, List.of(" " + alice.publicKey() + ", " + mallory.publicKey(), "", alice.publicKey()));
+        Check.ok(opened.allow().equals(List.of(alice.publicKey(), mallory.publicKey())), "local list is normalized, not the server echo");
+        try {
+            client.open(120, Arrays.asList("*", null));
+            Check.ok(false, "null entry must refuse");
+        } catch (IllegalArgumentException expected) {
+            Check.ok(calls[0] == 1, "null refused before sending");
+        }
+        Check.ok(new Client.Opened("key", W, List.of(" ", "*", alice.publicKey()), null).allow().equals(List.of("*")), "wildcard collapses the list");
+        reading(four);
+        Board board = new Board(client, "https://fake.test");
+        Board.Replies replies = board.replies(new Client.Opened("key", W, List.of("*"), null), 0, 0);
+        Check.ok(replies.replies().size() == 2 && replies.keptOut().size() == 2 && replies.next() == 4, "board replies apply the opened policy");
+        Check.ok(replies.keptOut().size() == 2 && replies.keptOut().get(1).unverifiedBecause() != null, "kept-out verification reason survives");
+        Check.ok(board.replies(W, "key", 0, 0).replies().size() == 4, "compatibility board overload is explicitly listless");
+
+        Check.section("bounded decoding and message-level failures");
+        for (String deep : List.of("[".repeat(60000), "{\"x\":".repeat(10000))) {
+            reading(List.of(stored(W, 1, deep, alice), stored(W, 2, "next", alice)));
+            Client.Read batch = client.read(W, "key", 0, 0);
+            Check.ok(batch.messages().size() == 2 && batch.messages().get(0).json() == null && batch.messages().get(1).verified(), "deep body does not stop the batch");
+        }
+        for (int depth : List.of(100, 128, 129)) {
+            String nested = "{\"x\":".repeat(depth) + "0" + "}".repeat(depth);
+            Check.ok((Json.object(nested) != null) == (depth <= 128), "JSON container boundary " + depth);
+        }
+        Map<String, Object> invalid = stored(W, 1, "broken", alice);
+        invalid.put("seq", new java.math.BigDecimal("1e1000") {
+            private static final long serialVersionUID = 1L;
+            @Override public long longValue() { throw new ArithmeticException("invalid sequence"); }
+        });
+        reading(List.of(invalid, stored(W, 2, "next", alice)));
+        Client.Read batch = client.read(W, "key", 0, 0);
+        Check.ok(batch.messages().size() == 2 && !batch.messages().get(0).verified() && batch.messages().get(0).from() == null && batch.messages().get(0).opened() == null && batch.messages().get(0).unverifiedBecause() != null && batch.messages().get(1).verified(), "a decoding exception fails closed for one message");
+
+        Check.section("legacy encodings, exact identities and complete receipts");
+        Map<String, Object> stray = (Map<String, Object>) v.get("strayBits");
+        Check.ok(Keys.verify(a, (String) stray.get("signature"), (String) v.get("signInput")), "legacy signature trailing bits verify");
+        Check.ok(Keys.verify((String) stray.get("key"), signature, (String) v.get("signInput")), "legacy key bytes verify");
+        Map<String, Object> legacy = stored(w, 1, body, null);
+        legacy.put("from", stray.get("key")); legacy.put("sig", signature);
+        reading(List.of(legacy));
+        Check.ok(client.readThread(new Client.Opened("key", w, List.of(a), null), 0, 0).keptOut().size() == 1, "identity comparison remains exact");
+        Map<String, Object> receipt = Map.of("messages", List.of(), "root", Receipt.root(List.of()));
+        Check.ok(Boolean.FALSE.equals(Receipt.verify(receipt, List.of("a")).localRootMatches()), "fewer receipt lines is a mismatch");
+        Check.ok(!Address.isId("a".repeat(26) + "\n") && !Address.isW(W + "\n") && !Address.isScopeKey("a".repeat(26) + "\n") && !Codec.isKey(a + "\n"), "shape validators reject trailing newlines");
+
         Http.override = null;
         System.exit(Check.done());
     }
