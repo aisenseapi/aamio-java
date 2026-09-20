@@ -114,7 +114,7 @@ public final class Vectors {
         List<Object> messages = (List<Object>) receipt.get("messages");
         Check.ok(Receipt.root(messages).equals(receipt.get("root")), "the root recomputed from the lines is the published root");
         Receipt.Check c = Receipt.verify(receipt, null);
-        Check.ok(c.rootAddsUp() && c.commitmentMatches() && c.localRootMatches() == null, "root_adds_up and commitment_matches on a real receipt, local unknown");
+        Check.ok(c.rootAddsUp() && c.commitmentMatches() && c.localHashesMatch() == null, "root_adds_up and commitment_matches on a real receipt, local unknown");
         Check.ok(Receipt.root(List.of(messages.get(1), messages.get(0))).equals(receipt.get("root")), "the order the lines arrive in does not matter, seq does");
         Map<String, Object> broken = new LinkedHashMap<>(receipt);
         Map<String, Object> first = new LinkedHashMap<>((Map<String, Object>) messages.get(0));
@@ -122,9 +122,9 @@ public final class Vectors {
         broken.put("messages", List.of(first, messages.get(1)));
         Check.ok(!Receipt.verify(broken, null).rootAddsUp(), "one changed hash breaks the root");
         List<String> hashes = List.of((String) ((Map<?, ?>) messages.get(0)).get("sha256"), (String) ((Map<?, ?>) messages.get(1)).get("sha256"));
-        Check.ok(Boolean.TRUE.equals(Receipt.verify(receipt, hashes).localRootMatches()), "local hashes that match say so");
-        Check.ok(Receipt.verify(receipt, hashes.subList(0, 1)).localRootMatches() == null, "fewer local hashes than the receipt counts is null, not a failure");
-        Check.ok(Boolean.FALSE.equals(Receipt.verify(receipt, List.of(hashes.get(1), hashes.get(0))).localRootMatches()), "local hashes in another order do not match");
+        Check.ok(Boolean.TRUE.equals(Receipt.verify(receipt, hashes).localHashesMatch()), "local hashes that match say so");
+        Check.ok(Receipt.verify(receipt, hashes.subList(0, 1)).localHashesMatch() == null, "fewer local hashes than the receipt counts is null, not a failure");
+        Check.ok(Boolean.FALSE.equals(Receipt.verify(receipt, List.of(hashes.get(1), hashes.get(0))).localHashesMatch()), "local hashes in another order do not match");
 
         Check.section("gate vectors");
         String gw = "b4netymg7r5nnt2yiscp";

@@ -15,7 +15,7 @@ them is in `Nacl.java`.
 <dependency>
   <groupId>at.aamio</groupId>
   <artifactId>aamio</artifactId>
-  <version>0.2.7</version>
+  <version>0.3.0</version>
 </dependency>
 ```
 

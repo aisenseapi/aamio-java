@@ -16,8 +16,8 @@ public final class Receipt {
     private Receipt() {
     }
 
-    /** What a client can say about a receipt. localRootMatches is null when the receipt counts more messages than the client holds, which is a receipt taken later, not a failure. */
-    public record Check(boolean rootAddsUp, boolean commitmentMatches, Boolean localRootMatches) {
+    /** What a client can say about a receipt. localHashesMatch is null when the receipt counts more messages than the client holds, which is a receipt taken later, not a failure. */
+    public record Check(boolean rootAddsUp, boolean commitmentMatches, Boolean localHashesMatch) {
     }
 
     /** The root recomputed: sha256 of the lines "seq<TAB>at<TAB>sha256<TAB>from-or-dash<LF>" in seq order. */
@@ -31,19 +31,35 @@ public final class Receipt {
         return Codec.sha256Hex(lines.toString());
     }
 
-    /** Recomputes and compares. localHashes may be null. */
+    /**
+     * Recomputes and compares. localHashes may be null.
+     *
+     * Entries used to be counted before they were filtered, so three of which one was
+     * not an object counted as three, matched a local list of three, and then the
+     * comparison ran over the two that survived. With every entry invalid the loop
+     * never ran and the answer was true, from no comparisons at all.
+     *
+     * A receipt this client cannot read whole is one it can say nothing true about, so
+     * every answer below is false for it rather than a claim made over what was left.
+     */
     public static Check verify(Map<String, Object> receipt, List<String> localHashes) {
         List<?> messages = receipt.get("messages") instanceof List<?> l ? l : List.of();
+        List<Map<?, ?>> readable = sorted(messages);
+
+        if (readable.size() != messages.size()) {
+            return new Check(false, false, localHashes == null ? null : Boolean.FALSE);
+        }
+
         String claimed = String.valueOf(receipt.get("root"));
         boolean rootAddsUp = MessageDigest.isEqual(Codec.utf8(root(messages)), Codec.utf8(claimed));
         boolean commitmentMatches = ("sha256:" + claimed).equals(receipt.get("commitment"));
         Boolean local = null;
-        if (localHashes != null && messages.size() < localHashes.size()) {
+        if (localHashes != null && readable.size() < localHashes.size()) {
             local = false;
-        } else if (localHashes != null && messages.size() == localHashes.size()) {
+        } else if (localHashes != null && readable.size() == localHashes.size()) {
             boolean match = true;
             int i = 0;
-            for (Map<?, ?> m : sorted(messages)) {
+            for (Map<?, ?> m : readable) {
                 if (!localHashes.get(i++).equals(m.get("sha256"))) {
                     match = false;
                     break;

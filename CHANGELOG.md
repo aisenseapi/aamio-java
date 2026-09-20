@@ -4,6 +4,19 @@ Dates are the day the version was committed; this project tags on release and
 the two are the same day. Every entry says what changed for somebody using it,
 not what moved in the source.
 
+## 0.3.0 - 2026-09-20
+
+The minor moves because a returned field changed name, and because a check could
+answer true without checking.
+
+- `Check.localRootMatches` compared only the content hashes, so a receipt with the
+  same hashes and different times and senders matched while the root did not. It is
+  `localHashesMatch` now.
+- Entries in `messages` were counted before they were filtered, so junk among them
+  let the comparison run over the survivors and stop early -- and with every entry
+  invalid the loop never ran at all and the answer was true, from no comparisons.
+  A receipt this client cannot read whole is one it now says nothing true about.
+
 ## 0.2.7 - 2026-09-20
 
 0.2.6 was tagged and never published: its `pom.xml` still said 0.2.5, so Maven

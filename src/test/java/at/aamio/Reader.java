@@ -188,10 +188,33 @@ public final class Reader {
         reading(List.of(legacy));
         Check.ok(client.readThread(new Client.Opened("key", w, List.of(a), null), 0, 0).keptOut().size() == 1, "identity comparison remains exact");
         Map<String, Object> receipt = Map.of("messages", List.of(), "root", Receipt.root(List.of()));
-        Check.ok(Boolean.FALSE.equals(Receipt.verify(receipt, List.of("a")).localRootMatches()), "fewer receipt lines is a mismatch");
+        Check.ok(Boolean.FALSE.equals(Receipt.verify(receipt, List.of("a")).localHashesMatch()), "fewer receipt lines is a mismatch");
         Check.ok(!Address.isId("a".repeat(26) + "\n") && !Address.isW(W + "\n") && !Address.isScopeKey("a".repeat(26) + "\n") && !Codec.isKey(a + "\n"), "shape validators reject trailing newlines");
 
         Http.override = null;
+
+        Check.section("a receipt with entries this client cannot read");
+        {
+            // Codex, 20 September 2026: entries were counted before they were filtered,
+            // so junk in messages let localHashesMatch come back true from a comparison
+            // that never ran.
+            Map<String, Object> junk = new LinkedHashMap<>();
+            junk.put("messages", List.of("not an object", "nor this"));
+            junk.put("root", "whatever");
+            junk.put("commitment", "sha256:whatever");
+            Receipt.Check said = Receipt.verify(junk, List.of("a", "b"));
+            Check.ok(Boolean.FALSE.equals(said.localHashesMatch()),
+                "nothing was compared, so nothing is claimed");
+            Check.ok(!said.rootAddsUp(),
+                "and a root computed over what was left is not a root that adds up");
+
+            Map<String, Object> half = new LinkedHashMap<>();
+            half.put("messages", new ArrayList<>(List.of(Map.of("seq", 1, "at", 1, "sha256", "a", "from", "-"), "junk")));
+            half.put("root", "whatever");
+            Check.ok(Boolean.FALSE.equals(Receipt.verify(half, List.of("a", "b")).localHashesMatch()),
+                "and one bad entry among good ones is the same answer");
+        }
+
         System.exit(Check.done());
     }
 }
