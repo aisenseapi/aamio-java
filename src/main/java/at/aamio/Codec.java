@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
  * bytes, and lowercase base32 for addresses.
  */
 public final class Codec {
-    public static final String VERSION = "0.3.0";
+    public static final String VERSION = "0.3.1";
 
     private static final Pattern KEY = Pattern.compile("^[A-Za-z0-9_-]{43}$");
     private static final String BASE32 = "abcdefghijklmnopqrstuvwxyz234567";

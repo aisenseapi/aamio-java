@@ -43,7 +43,16 @@ public final class Receipt {
      * every answer below is false for it rather than a claim made over what was left.
      */
     public static Check verify(Map<String, Object> receipt, List<String> localHashes) {
-        List<?> messages = receipt.get("messages") instanceof List<?> l ? l : List.of();
+        Object listed = receipt.get("messages");
+
+        // Missing, or something that is not a list, used to become an empty list here,
+        // so a receipt saying "not-a-list" verified as a legitimate receipt for a
+        // thread nobody had written to. A field that is not there is not a field that
+        // is empty.
+        if (!(listed instanceof List<?> messages)) {
+            return new Check(false, false, localHashes == null ? null : Boolean.FALSE);
+        }
+
         List<Map<?, ?>> readable = sorted(messages);
 
         if (readable.size() != messages.size()) {

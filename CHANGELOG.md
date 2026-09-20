@@ -4,6 +4,14 @@ Dates are the day the version was committed; this project tags on release and
 the two are the same day. Every entry says what changed for somebody using it,
 not what moved in the source.
 
+## 0.3.1 - 2026-09-20
+
+- `messages` missing, or of a type that is not a list, became an empty list before
+  anything was checked, so a receipt saying "not-a-list" verified as a legitimate
+  receipt for a thread nobody had written to: rootAddsUp, commitmentMatches and
+  localHashesMatch all true. A field that is not there is not a field that is
+  empty. A genuinely empty list still verifies.
+
 ## 0.3.0 - 2026-09-20
 
 The minor moves because a returned field changed name, and because a check could

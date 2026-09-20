@@ -213,6 +213,32 @@ public final class Reader {
             half.put("root", "whatever");
             Check.ok(Boolean.FALSE.equals(Receipt.verify(half, List.of("a", "b")).localHashesMatch()),
                 "and one bad entry among good ones is the same answer");
+            // Codex, 20 September 2026: a field that is not there, or is the wrong
+            // kind, became an empty list before anything was checked.
+            String emptyRoot = Receipt.root(List.of());
+            Map<String, Object> wrongType = new LinkedHashMap<>();
+            wrongType.put("messages", "not-a-list");
+            wrongType.put("root", emptyRoot);
+            wrongType.put("commitment", "sha256:" + emptyRoot);
+            Receipt.Check typed = Receipt.verify(wrongType, List.of());
+            Check.ok(!typed.rootAddsUp() && !typed.commitmentMatches()
+                && Boolean.FALSE.equals(typed.localHashesMatch()),
+                "messages of the wrong type is not an empty receipt");
+
+            Map<String, Object> absent = new LinkedHashMap<>();
+            absent.put("root", emptyRoot);
+            absent.put("commitment", "sha256:" + emptyRoot);
+            Check.ok(!Receipt.verify(absent, List.of()).rootAddsUp(),
+                "and no messages field at all is not one either");
+
+            Map<String, Object> genuinelyEmpty = new LinkedHashMap<>();
+            genuinelyEmpty.put("messages", List.of());
+            genuinelyEmpty.put("root", emptyRoot);
+            genuinelyEmpty.put("commitment", "sha256:" + emptyRoot);
+            Receipt.Check nothingYet = Receipt.verify(genuinelyEmpty, List.of());
+            Check.ok(nothingYet.rootAddsUp() && nothingYet.commitmentMatches()
+                && Boolean.TRUE.equals(nothingYet.localHashesMatch()),
+                "and a thread nobody has written to still verifies");
         }
 
         System.exit(Check.done());
