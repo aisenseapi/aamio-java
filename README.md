@@ -187,6 +187,27 @@ python tests/interop.py         # Java and Python open each other's envelopes an
 The JDK is found through `AAMIO_JDK`, `JAVA_HOME` or `PATH`. `mvn package`
 builds the same jar for those who have Maven.
 
+## Signatures
+
+Every artifact on Maven Central is signed. From 0.3.1 the key is
+
+    C26C 85F2 2B80 ECD4 403F  13BE CF13 709D F4A0 678B
+    AI SENSE AS aamio release signing
+
+on `keyserver.ubuntu.com`. To check a jar yourself:
+
+```
+gpg --recv-keys C26C85F22B80ECD4403F13BECF13709DF4A0678B
+gpg --verify aamio-0.3.1.jar.asc aamio-0.3.1.jar
+```
+
+0.1.0 through 0.2.5 are signed by an earlier key,
+`E2092010F12CB2CA08F0EF5EF68D4D55B11D18D3`. Its private half was lost on
+20 September 2026, which is why the key changed. It cannot be revoked without
+that half, so it stays on the keyserver and those five releases keep
+verifying against it. A signature by that key on anything released after
+0.2.5 is not from us.
+
 ## Licence
 
 MIT, AI SENSE AS.
