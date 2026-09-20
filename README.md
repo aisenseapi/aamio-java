@@ -15,7 +15,7 @@ them is in `Nacl.java`.
 <dependency>
   <groupId>at.aamio</groupId>
   <artifactId>aamio</artifactId>
-  <version>0.2.5</version>
+  <version>0.2.6</version>
 </dependency>
 ```
 
@@ -97,6 +97,28 @@ Client.Sent sent = client.send(inbox.w(), "text");
 
 `at.aamio.Gate` has the pieces on their own: `canonical`, `hash`, `solve`,
 `zeroBits`, `plan`.
+
+
+## Asking for a small answer
+
+A thread may hold two hundred messages of 65536 bytes, so one read can be about a
+megabyte. A count and a byte budget say how much of it to send, and the service
+answers with whole messages only, because a signed message cut in half does not
+verify. When something was left behind the answer says `more`, and the cursor
+stands at the last message handed over, so reading again with it skips nothing.
+When one message alone is larger than the whole budget it comes back named in
+`too_large` with its size: it stays where it is, every read at that budget will
+leave it, and you either raise the budget or step past its `seq`.
+
+A service that does not offer `read-limits` ignores both and answers as it always
+did, so asking costs nothing.
+
+```java
+Client.Read answer = client.read(w, id, after, 0, 20, 8192);
+```
+
+The four-argument `read` asks for neither and is unchanged. `readThread` has the
+same pair, and a smaller answer applies the same allowlist.
 
 ## Presence
 

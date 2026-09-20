@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION = "0.2.5"
+VERSION = "0.2.6"
 JDK = os.environ.get("AAMIO_JDK") or os.environ.get("JAVA_HOME")
 
 
@@ -42,6 +42,7 @@ def main():
     classpath = os.pathsep.join([classes, tests])
     run(tool("java"), "-Dstdout.encoding=UTF-8", "-cp", classpath, "at.aamio.Vectors", os.path.join(ROOT, "testdata", "vectors.json"))
     run(tool("java"), "-Dstdout.encoding=UTF-8", "-cp", classpath, "at.aamio.Reader", os.path.join(ROOT, "testdata", "vectors.json"))
+    run(tool("java"), "-Dstdout.encoding=UTF-8", "-cp", classpath, "at.aamio.ReadLimits")
     if "--live" in sys.argv:
         run(tool("java"), "-Dstdout.encoding=UTF-8", "-cp", classpath, "at.aamio.Live")
     print("jar: build/aamio-%s.jar" % VERSION)

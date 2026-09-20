@@ -372,7 +372,16 @@ public final class Client {
      * never dropped in silence. The cursor covers both.
      */
     public Read readThread(Opened thread, int after, int wait) {
-        Read read = read(thread.w(), thread.id(), after, wait);
+        return readThread(thread, after, wait, null, null);
+    }
+
+    /**
+     * readThread with the limits of the six-argument read. A smaller answer is not a
+     * looser one: the allowlist is checked here exactly as before, and what it keeps
+     * out is still listed rather than dropped in silence.
+     */
+    public Read readThread(Opened thread, int after, int wait, Integer limit, Integer maxBytes) {
+        Read read = read(thread.w(), thread.id(), after, wait, limit, maxBytes);
         if (thread.allow().isEmpty()) {
             return read;
         }
@@ -401,6 +410,27 @@ public final class Client {
      * verified that does not check out says why in unverifiedBecause.
      */
     public Read read(String w, String id, int after, int wait) {
+        return read(w, id, after, wait, null, null);
+    }
+
+    /**
+     * read, asking the service for a small answer.
+     *
+     * limit is at most this many messages, maxBytes at most this many bytes of them;
+     * null for either means do not ask, and asking for neither is exactly the read
+     * above. A thread may hold two hundred messages of 65536 bytes, so one read can
+     * be about a megabyte, and without these the whole of it crosses the network
+     * before anything here looks at it.
+     *
+     * Whole messages only: a signed message cut in half does not verify. When
+     * something was left behind the answer carries more, and next is the last message
+     * handed over, so passing it back as after skips nothing. When one message alone
+     * is over budget the answer carries too_large naming it and its size.
+     *
+     * A service that does not offer read-limits ignores both headers and answers as
+     * it always did, so these are safe to send without asking what it supports.
+     */
+    public Read read(String w, String id, int after, int wait, Integer limit, Integer maxBytes) {
         String path = "/" + w;
         if (after > 0 || wait > 0) {
             path += "/after/" + after;
@@ -408,7 +438,14 @@ public final class Client {
         if (wait > 0) {
             path += "/wait/" + Math.min(wait, 25);
         }
-        Answer a = Http.call("GET", host + path, null, Map.of("X-Read", id), timeout + 25);
+        Map<String, String> headers = new LinkedHashMap<>(Map.of("X-Read", id));
+        if (limit != null) {
+            headers.put("X-Limit", String.valueOf(limit));
+        }
+        if (maxBytes != null) {
+            headers.put("X-Max-Bytes", String.valueOf(maxBytes));
+        }
+        Answer a = Http.call("GET", host + path, null, headers, timeout + 25);
         List<Message> messages = new ArrayList<>();
         // The cursor the caller already has, so a refusal or a dead connection
         // leaves it where it was. Zero sent the documented loop back to the
