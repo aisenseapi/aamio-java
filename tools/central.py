@@ -153,17 +153,40 @@ def bundle():
 
 
 def token():
-    """The Central user token as the API wants it, read from a file and never printed."""
+    """The Central user token as the API wants it, read from a file and never printed.
+
+    Two shapes are taken, because the portal gives one and the docstring asked for
+    the other: a line of username:password, or the <server> block the portal prints
+    for settings.xml, pasted whole. Anything else is refused rather than guessed at,
+    since a wrong guess is an authorization header built from rubbish and a 401 that
+    says nothing about why. The value is never printed, not even in an error.
+    """
     if not os.path.isfile(TOKEN_FILE):
         sys.exit(
             "no Central token at " + TOKEN_FILE + ". Make one at https://central.sonatype.com under "
-            "Account, Generate User Token, and save the pair as one line of username:password. "
-            "Point AAMIO_CENTRAL_TOKEN_FILE somewhere else if you keep it elsewhere."
+            "Account, Generate User Token, and save it as one line of username:password, or paste "
+            "the <server> block the portal shows. Point AAMIO_CENTRAL_TOKEN_FILE somewhere else if "
+            "you keep it elsewhere."
         )
-    with open(TOKEN_FILE, encoding="utf-8") as handle:
+    # utf-8-sig: Notepad writes a byte order mark, and it would land in the username.
+    with open(TOKEN_FILE, encoding="utf-8-sig") as handle:
         pair = handle.read().strip()
+
+    if "<username>" in pair and "<password>" in pair:
+        try:
+            server = ET.fromstring(pair)
+        except ET.ParseError as broken:
+            sys.exit(TOKEN_FILE + " looks like the portal's <server> block but does not parse: %s" % broken)
+
+        found = { tag: server.findtext( tag ) for tag in ( "username", "password" ) }
+
+        if not all( ( found[ tag ] or "" ).strip() for tag in found ):
+            sys.exit(TOKEN_FILE + " has a <server> block with an empty username or password")
+
+        pair = found[ "username" ].strip() + ":" + found[ "password" ].strip()
+
     if pair.count(":") != 1 or not all(part.strip() for part in pair.split(":")):
-        sys.exit(TOKEN_FILE + " should hold one line of username:password from the portal, and nothing else")
+        sys.exit(TOKEN_FILE + " should hold one line of username:password from the portal, or the <server> block it prints, and nothing else")
 
     return base64.b64encode(pair.encode("utf-8")).decode("ascii")
 
