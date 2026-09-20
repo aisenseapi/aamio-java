@@ -4,6 +4,18 @@ Dates are the day the version was committed; this project tags on release and
 the two are the same day. Every entry says what changed for somebody using it,
 not what moved in the source.
 
+## 0.2.7 - 2026-09-20
+
+0.2.6 was tagged and never published: its `pom.xml` still said 0.2.5, so Maven
+Central would have packaged it under the previous version, and the public
+`Codec.VERSION` said 0.2.5 as well. A package that says two numbers about itself
+is one nobody can report a bug against.
+
+- Every place this package writes its own version says 0.2.7.
+- `read` and `readThread` have overloads taking `limit` and `maxBytes`, which go
+  out as `X-Limit` and `X-Max-Bytes`. The three- and four-argument forms are
+  unchanged and ask for nothing.
+
 ## 0.2.6 - 2026-09-20
 
 - `read` and `readThread` have overloads taking `limit` and `maxBytes`, which go out
