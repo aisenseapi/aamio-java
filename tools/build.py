@@ -43,6 +43,7 @@ def main():
     run(tool("java"), "-Dstdout.encoding=UTF-8", "-cp", classpath, "at.aamio.Vectors", os.path.join(ROOT, "testdata", "vectors.json"))
     run(tool("java"), "-Dstdout.encoding=UTF-8", "-cp", classpath, "at.aamio.Reader", os.path.join(ROOT, "testdata", "vectors.json"))
     run(tool("java"), "-Dstdout.encoding=UTF-8", "-cp", classpath, "at.aamio.ReadLimits")
+    run(tool("java"), "-Dstdout.encoding=UTF-8", "-cp", classpath, "at.aamio.DomainKeysVectors", os.path.join(ROOT, "testdata", "domain_keys_vectors.json"))
     if "--live" in sys.argv:
         run(tool("java"), "-Dstdout.encoding=UTF-8", "-cp", classpath, "at.aamio.Live")
     print("jar: build/aamio-%s.jar" % VERSION)
