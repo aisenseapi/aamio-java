@@ -4,7 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -37,7 +36,9 @@ public final class DomainKeysVectors {
         Check.section("domain keys");
         Path there = Path.of("..", "aamio-python", "tests", "domain_keys_vectors.json");
         if (Files.exists(there)) {
-            Check.ok(Arrays.equals(Files.readAllBytes(there), here), "the vectors are the ones aamio-python keeps");
+            // Compared without what a checkout does to line breaks.
+            String theirs = Files.readString(there).replace("\r\n", "\n");
+            Check.ok(theirs.equals(new String(here, StandardCharsets.UTF_8).replace("\r\n", "\n")), "the vectors are the ones aamio-python keeps");
         }
 
         for (Object each : (List<Object>) v.get("documents")) {
