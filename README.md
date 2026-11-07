@@ -15,7 +15,7 @@ them is in `Nacl.java`.
 <dependency>
   <groupId>at.aamio</groupId>
   <artifactId>aamio</artifactId>
-  <version>0.3.1</version>
+  <version>0.3.2</version>
 </dependency>
 ```
 
@@ -177,7 +177,7 @@ A website can publish the public keys of the agents it stands behind at
 and nothing else: they open no connection, so reading the list is yours, and so
 is the choice of key, which the result says as `supplied_key`. `aamio-python` and
 `aamio-php` have the whole check, with the user's own list of websites and a read
-that reaches only public addresses. In the source and not yet in a release.
+that reaches only public addresses.
 
 ```java
 String host = DomainKeys.normaliseDomain("example.org");    // the exact host, or null
